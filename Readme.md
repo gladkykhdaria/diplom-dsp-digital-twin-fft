@@ -54,17 +54,18 @@ front of someone.
 
 ## What it actually does
 
-- A real DHT22 sensor feeds live temperature and humidity data into the
-  system.
+- Two real sensors feed live data into the system: a BME280
+  (temperature, humidity, pressure) and an MPU-6050 (acceleration,
+  gyroscope) - sharing one I2C bus properly, both reading correctly and
+  continuously.
 - The system classifies that data itself - green/yellow/red per
   parameter - and drives real LEDs and a buzzer based on its own
   judgment, not a person watching a chart.
 - A Raspberry Pi Pico 2 W runs its own Wi-Fi hotspot and serves that
   data (and takes commands) over a simple network protocol.
-- A Rust web app on the other end gives a live dashboard: the current
-  reading, the system's status, and a way to simulate values to test
-  every possible outcome before the real sensor even had to prove
-  itself.
+- A Rust web app on the other end gives a live dashboard: real sensor
+  readings, the system's status, and a way to simulate values to test
+  every possible outcome, all on one consolidated view.
 - Underneath all of that sits the actual research question: whether a
   Rust-based signal-processing pipeline (FFT and friends, for the
   vibration side of the project) can match or beat Python's NumPy/SciPy
@@ -74,24 +75,30 @@ front of someone.
 ## Why it matters to me
 
 Because I don't want to hand in a project where I just followed a
-tutorial. I want to hand in a project where I hit a genuinely hard,
-unresolved engineering problem - real sensor data getting corrupted the
-moment Wi-Fi turns on - and instead of hiding that, I chased it through
-CPU scheduling, timing analysis, electrical noise, and hardware-level
-fixes, ruling things out one at a time like an actual investigation.
-That process is the part I'm proudest of, more than any single feature
-working. It's the part that actually taught me something.
+tutorial. I want to hand in a project where I hit a genuinely hard
+engineering problem - real sensor data getting corrupted the moment
+Wi-Fi turned on - and instead of hiding that or quietly working around
+it, I chased it through CPU scheduling, timing analysis, electrical
+noise, and hardware-level fixes, ruling things out one at a time like
+an actual investigation, until it actually resolved: not a workaround,
+a real root cause (a single-wire sensor protocol with zero tolerance
+for shared hardware, replaced with a properly clocked I2C sensor
+instead). That process, start to finish, is the part I'm proudest of,
+more than any single feature working. It's the part that actually
+taught me something.
 
-If a system I built is still fighting me by the end of this, that's
-not a failure of the project - that's the project doing exactly what I
-wanted it to do: show me a real problem, not a fake one.
+Getting a system to genuinely fight me, and then figuring out exactly
+why, is a much better story than everything working on the first try
+would have been.
 
 ## Status
 
-Fully working end-to-end on simulated data. Real sensor integration
-works reliably on its own, and is currently being debugged specifically
-for reliable operation *while* Wi-Fi is active - see `tech.md` for the
-full, honest blow-by-blow of what's been tried.
+Fully working end-to-end on **real sensor data**. Both the BME280 and
+the MPU-6050 read correctly and continuously, sharing one I2C bus,
+simultaneously with Wi-Fi fully active - the earlier Wi-Fi conflict is
+resolved, not just documented as a limitation. See `tech.md` for the
+full, honest history of how it got there, including everything that
+didn't work along the way.
 
 See `idea.md` for the full theoretical case (Digital Twin literature,
 the math behind the FFT, and the Rust-vs-Python argument), and
