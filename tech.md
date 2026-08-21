@@ -36,6 +36,20 @@ worked, because the failures are as informative as the successes.
   or code. Abandoned in favor of returning to the DHT22.
   <img width="807" height="758" alt="image" src="https://github.com/user-attachments/assets/6510d5cc-7bd3-41e7-a8fa-cf68aa8afd16" />
 
+- **BME280 #2 (temperature/humidity/pressure, I2C)** - a second,
+  independent unit, purchased after the DHT22-vs-Wi-Fi conflict was
+  conclusively root-caused (Section 3.9) and I2C was identified as the
+  structurally correct replacement. **Genuine, working hardware** -
+  confirmed via physically plausible, correctly drifting readings
+  (temperature, humidity, and pressure all responding to real ambient
+  conditions), and now the project's live temperature/humidity/pressure
+  source. See Section 3.12.
+
+  - **MPU-6050 (GY-521) accelerometer/gyroscope, I2C** - the vibration
+  sensor the FFT/DSP pipeline is actually built around. Confirmed
+  genuine, working hardware via `WHO_AM_I` register readback and real
+  physical response to motion (tilting/shaking). See Section 3.11.
+  <img width="600" height="407" alt="image" src="https://github.com/user-attachments/assets/ffecbd50-fd46-4fc1-bd56-a8ad751f6cb1" />
 
 ### Display tried
 - **2.4" ILI9341 SPI TFT display** - wired and driven correctly at the
@@ -63,6 +77,80 @@ worked, because the failures are as informative as the successes.
 - **Aluminum foil**, grounded to target GND via a jumper wire, tested as
   an improvised RF shield between the two boards. Abandoned; not currently part of the system.
 
+
+
+## 1.5 Pin Reference (current, final wiring)
+ 
+Every physical connection currently in use on the target Pico 2 W, as of
+the working system described in this document. GPIO numbers are the
+`GPxx` labels; physical pin numbers are the pin position counting around
+the board, as printed on most Pico 2 W pinout diagrams.
+ 
+### Debug probe &harr; target (SWD)
+ 
+| Signal | Debug-probe Pico pin | Target Pico pin |
+|---|---|---|
+| SWCLK | GP2 | SWCLK |
+| SWDIO | GP3 | SWDIO |
+| GND | GND | GND |
+ 
+### Power
+ 
+| Signal | From | To | Physical pin (target) |
+|---|---|---|---|
+| Target power | Laptop USB &rarr; target's own USB port | Target VSYS | - |
+ 
+(Both boards are powered independently via their own USB cables from
+the laptop - not daisy-chained through the debug probe. See Section 3.9
+for why a fully separate power source was tested and ruled out as a
+factor.)
+ 
+### I2C0 bus - shared by both sensors
+ 
+One physical bus, two devices, distinguished by I2C address (BME280 =
+`0x76`, MPU-6050 = `0x68`) via the shared-bus pattern described in
+Section 2.
+ 
+| Signal | Target Pico pin | Physical pin # |
+|---|---|---|
+| SCL | GP5 | 7 |
+| SDA | GP4 | 6 |
+ 
+**BME280:**
+ 
+| BME280 pin | Target Pico pin | Physical pin # |
+|---|---|---|
+| VIN | 3V3(OUT) | 36 |
+| GND | any GND | 38 |
+| SCL | GP5 | 7 |
+| SDA | GP4 | 6 |
+ 
+**MPU-6050 (GY-521):**
+ 
+| MPU6050 pin | Target Pico pin | Physical pin # |
+|---|---|---|
+| VCC | 3V3(OUT) | 36 |
+| GND | any GND | 38 |
+| SCL | GP5 | 7 |
+| SDA | GP4 | 6 |
+ 
+### Status LEDs (6x) + buzzer
+ 
+| Signal | Target Pico pin | Physical pin # |
+|---|---|---|
+| Temperature - GREEN | GP12 | 16 |
+| Temperature - YELLOW | GP13 | 17 |
+| Temperature - RED | GP14 | 19 |
+| Humidity - GREEN | GP9 | 12 |
+| Humidity - YELLOW | GP10 | 14 |
+| Humidity - RED | GP11 | 15 |
+| Buzzer (shared alarm) | GP15 | 20 |
+ 
+Each LED has its own series resistor (~220&ndash;1k &Omega;) between the
+GPIO pin and the LED, cathode to GND. The buzzer's `+` goes to GP15,
+`-` to GND.
+ 
+
 ---
 
 ## 2. Software Stack
@@ -80,17 +168,20 @@ worked, because the failures are as informative as the successes.
 - **Networking:** `embassy-net` with `smoltcp`, a raw TCP server on
   port 6000 implementing a small plain-text command protocol
   (`read`, `sim:<temp>:<humidity>`).
-- **Sensor driver, final version:** a hand-written **PIO program**
-  (via the `pio` / `pio-proc` crates) that runs the entire DHT22
-  handshake and 40-bit read autonomously in dedicated hardware,
-  independent of the CPU. Earlier versions (see Section 3) used
-  CPU-driven bit-banging and the `embedded-dht-rs` crate; both are
-  now superseded.
+- **Sensor drivers, final design:** two real I2C sensors sharing one
+  physical I2C0 bus (GP4=SDA, GP5=SCL), via the official `embassy`
+  shared-bus pattern (`embassy-embedded-hal`'s
+  `shared_bus::asynch::i2c::I2cDevice`, one `I2c` instance behind an
+  async `Mutex`, each sensor gets its own handle): a **BME280**
+  (`bme280-rs` crate, address `0x76`) for temperature/humidity/pressure,
+  and an **MPU-6050** (hand-rolled register-level driver, address
+  `0x68`) for acceleration/gyroscope. This replaced an earlier
+  PIO-driven DHT22 approach entirely - see Section 3.9 for why.
 - **Debug/logging:** `defmt` + `defmt-rtt`, viewed live via
   `probe-rs run` over the SWD debug probe.
 - **Flashing/debugging tool:** `probe-rs`, talking to the debug-probe
   Pico over SWD.
-
+  
 ### Web application (runs on the laptop, not the Pico)
 - **Language/framework:** Rust, `axum` web server + `tokio` async
   runtime.
@@ -278,24 +369,78 @@ Wi-Fi radio and the sensor's single-wire signal** - either radiated
   (to isolate conducted power-rail noise from a shared USB source as a
   variable).
 
+
+### 3.11 MPU-6050 integration
+- **Win, immediate and complete:** wired up on I2C0, confirmed via
+  `WHO_AM_I` register readback (`0x68`, the correct value) and real
+  physical response - acceleration and gyroscope values changing
+  correctly and returning to rest when the sensor was tilted/shaken.
+  Expanded to read the sensor's full data block in one burst: all 3
+  accelerometer axes, all 3 gyroscope axes, and the sensor's internal
+  temperature, converted to real physical units (g, degrees/second,
+  &deg;C) rather than raw register counts.
+- **Win, decisive for the whole investigation:** folded into the real
+  Wi-Fi-enabled firmware and left running continuously alongside every
+  single DHT22 mitigation test in Section 3.9 (AP/station switching,
+  power-save mode, AP close/reopen cycling, separate power supply). It
+  never failed once - hundreds of consecutive successful reads across
+  every test, unaffected by any of it. This is what made the
+  single-wire-vs-clocked-protocol explanation concrete rather than
+  theoretical: same board, same Wi-Fi, same disruptive conditions, and
+  the only variable that mattered was which protocol the sensor used.
+### 3.12 BME280 #2 integration and the final I2C bus-sharing lesson
+- **Win:** the new BME280 unit, tested standalone (no Wi-Fi) first,
+  produced clean, physically plausible, correctly drifting temperature/
+  humidity/pressure readings from the very first attempt - confirming
+  genuine working hardware this time.
+- **Fail &rarr; fix (architecture):** the first attempt to fold it into
+  the real firmware put it on a second, independent I2C bus (I2C1, a
+  different GPIO pair from the MPU6050's I2C0), reasoning that separate
+  hardware buses would avoid any possible interaction between the two
+  sensors. This was the wrong instinct: BME280 failed to initialize on
+  I2C1 every time, while the exact same BME280 code had just worked
+  perfectly on I2C0 in isolation, and the MPU6050 kept working
+  flawlessly on I2C0 the whole time. The wiring was double-checked and
+  correct.
+- **Fix:** rather than keep chasing the second bus, both sensors were
+  moved onto the *same*, already-proven I2C0 bus, sharing it correctly
+  via the official `embassy` shared-bus pattern
+  (`embassy-embedded-hal`'s `shared_bus::asynch::i2c::I2cDevice`: one
+  `I2c` driver instance behind an async `Mutex`, each sensor given its
+  own handle into it, distinguished only by I2C address - BME280 at
+  `0x76`, MPU6050 at `0x68`). This is precisely what I2C's bus design is
+  for, and it worked immediately: both sensors initialize and read
+  correctly, continuously, with Wi-Fi fully active.
+- **Result:** the full Digital Twin loop is now genuinely closed with
+  real data end to end - real BME280 and MPU6050 readings drive real
+  LED/buzzer state and a real live dashboard, simultaneously with Wi-Fi
+  running normally (no AP-cycling workaround needed at all, since I2C
+  never required one).
+---
 ---
 
 ## 4. Current Status Summary
-
+ 
 | Component | Status |
 |---|---|
 | SWD debug probe setup | Working, reliable |
 | Wi-Fi AP + TCP server + web app bridge | Working, reliable |
-| LED (6x) + buzzer classification logic | Working, reliable, driven by simulated data |
-| DHT22 sensor, standalone (no Wi-Fi) | Working reliably via PIO |
-| DHT22 sensor, with Wi-Fi active | **Not working** - 100% failure, root cause not yet confirmed |
-| BME280 sensor | Abandoned - confirmed dead temperature channel |
+| LED (6x) + buzzer classification logic | Working, reliable, now driven by real sensor data |
+| BME280 (temperature/humidity/pressure) | **Working, reliable, real data, alongside Wi-Fi** |
+| MPU-6050 (acceleration/gyroscope) | **Working, reliable, real data, alongside Wi-Fi** |
+| DHT22 sensor | Retired - see Section 3.9 for the full, conclusive root-cause finding |
+| BME280 #1 (first unit) | Abandoned - confirmed dead temperature channel (hardware fault) |
 | ILI9341 display | Abandoned - confirmed dead backlight/panel |
-| Web dashboard (overview, control, simulation, live reading) | Working, reliable |
-
-The system is fully demonstrable end-to-end today using the simulated
-sensor data pathway. The remaining open problem is specifically: real
-DHT22 sensor data while the Wi-Fi access point is simultaneously active.
-
-
-
+| Web dashboard (single consolidated view, blue palette) | Working, reliable, real live data |
+ 
+The Digital Twin loop is now genuinely closed end to end: real sensor
+data (BME280 + MPU6050) drives real classification logic, which drives
+real physical LEDs/buzzer and a real live dashboard, continuously,
+simultaneously with Wi-Fi running normally. The DHT22-vs-Wi-Fi
+investigation that occupied most of Section 3 concluded with a real,
+specific, protocol-level root cause (Section 3.9) and a structural fix
+(switching to clocked I2C sensors) rather than a workaround - which is
+itself a genuine, citable finding about single-wire sensor protocols
+and concurrent radio hardware on this class of board.
+ 
+ 
