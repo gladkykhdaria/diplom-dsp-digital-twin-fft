@@ -5,20 +5,26 @@ foreknowledge." Sensing that something is about to go wrong, before it
 actually does.*
 
 ## What this thesis actually is
-
+ 
 This is not only a build project. The goal isn't just to make a
 working Digital Twin - it's to answer a real, testable question:
 **is Rust actually more efficient than Python for this kind of
 real-time signal processing task, or not?**
-
+ 
 Because during my study at uni I heard so much differnt opinions bout Python and Rust languages, so I was genually interested to check that by myself.
-
+ 
 The system itself (sensors, FFT, anomaly detection, physical response)
-exists so that question has something real to be measured on. The
-same FFT workload will be run on both languages, on the same machine,
-at multiple sizes, and timed and compared directly - throughput and
-timing consistency (jitter), not just a single speed number. The build
+exists so that question has something real to be measured on - and not
+just as a source of the idea, but as the actual source of the data.
+The Pico records real vibration data while it's genuinely running, and
+that recorded signal becomes the actual input for the benchmark: the
+same real FFT workload, run on both languages, on the same laptop, at
+multiple sizes, timed and compared directly - throughput and timing
+consistency (jitter), not just a single speed number. The embedded
+system and the benchmark aren't two separate demos stapled together -
+they're one connected pipeline, joined by one shared dataset. The build
 is the experiment; the comparison is the actual research contribution.
+
 
 ## What the project does, in plain words
 
@@ -133,24 +139,33 @@ even if that weren't true, the Pico's 520KB of memory is nowhere near
 enough to hold a Python interpreter plus NumPy.
  
 So the comparison isn't "Rust on the Pico vs Python on the Pico" - it's
-structured as two separate, deliberately different jobs:
+two connected stages, joined by one shared dataset rather than two
+separate demos:
  
-- **On the Pico (Rust only, `microfft`):** proves the system can run
-  in real time on genuinely constrained embedded hardware at all. This
-  is part of the argument for Rust, but it isn't the benchmark itself
-  - there's nothing to compare it against on the same chip, since
-  Python was never a candidate for running there.
-- **The actual benchmark (laptop, both languages, same machine):** the
-  identical FFT workload, implemented in Rust (`rustfft`) and Python
-  (NumPy/SciPy), run on the *same* laptop hardware, at several input
+- **Stage 1 - the Pico (Rust only, `microfft`):** runs the real-time
+  system, and while it's genuinely operating, records real MPU-6050
+  vibration data - not a synthetic test signal, the actual signal the
+  physical system produced. This also proves the system can run in
+  real time on genuinely constrained embedded hardware at all, which
+  is part of the argument for Rust, though not the benchmark itself.
+- **Stage 2 - the benchmark (laptop, both languages, same machine, on
+  that exact recorded data):** the identical FFT workload, implemented
+  in Rust (`rustfft`) and Python (NumPy/SciPy), run on the *same*
+  laptop hardware, on the real signal from Stage 1, at several input
   sizes, timing both throughput and timing consistency (jitter - how
   much the timing varies run to run, not just the average speed).
+  Synthetic tones are still used separately to verify the FFT is
+  mathematically correct in the first place - but the actual
+  performance comparison runs on real data, not just clean test
+  signals.
+  
 Running both languages on the same machine is the methodologically
 important part: if I compared Rust-on-a-150MHz-microcontroller against
 Python-on-a-laptop, I'd be measuring a hardware difference, not a
 language difference, and the comparison would prove nothing about Rust
 vs Python at all. Keeping the hardware identical and only changing the
 language is what makes the result actually mean something.
+ 
  
 
 ## Hardware used
@@ -231,8 +246,9 @@ of guesses.
 | 7 | Anomaly threshold set from one real calibration run (0.735-51.44 -> 77.0) | In progress - needs repeat sessions to confirm it's stable, not a one-off |
 | 8 | Confirm the anomaly detector doesn't get stuck re-triggering on its own motor vibration | In progress |
 | 9 | Low/high-pass filters, written from scratch | Next |
-| 10 | Rust vs Python benchmark - same FFT workload, both languages, multiple sizes | Next |
-| 11 | Draft thesis chapters based on the results | Next |
+| 10 | Export real recorded MPU-6050 vibration data from the Pico, for use as benchmark input | Next |
+| 11 | Rust vs Python benchmark - same real recorded data, both languages, multiple sizes | Next |
+| 12 | Draft thesis chapters based on the results | Next |
  
 
 
