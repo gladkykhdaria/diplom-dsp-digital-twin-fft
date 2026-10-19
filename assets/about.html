@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartStation - About</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header>
+    <nav>
+        <h1>SmartStation</h1>
+        <ul>
+            <li><a href="/index.html">Dashboard</a></li>
+            <li><a href="/about.html">About</a></li>
+            <li><a href="/sensors.html">Simulate</a></li>
+            <li><a href="/control.html">Manual LEDs</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <section class="hero">
+        <h2>About This Project</h2>
+        <p>A real-time signal-processing and monitoring system, built in Rust</p>
+    </section>
+
+    <section class="about-content">
+        <p>
+            Every machine has sensors. This system reads signals from those
+            sensors, instantly analyses them, and warns about a failure
+            <strong>before it happens</strong> - several times faster than
+            existing Python solutions. The state of the machine is reflected
+            both on physical LED indicators and on the live dashboard,
+            forming a real Digital Twin.
+        </p>
+
+        <h3>Why a Digital Twin, and not something simpler?</h3>
+        <p>
+            The term "Digital Twin" gets used loosely for all kinds of
+            connected dashboards. There are actually three distinct system
+            types, and the difference between them is what this project is
+            really built around:
+        </p>
+        <ul style="margin-left: 1.2rem; margin-bottom: 1rem;">
+            <li style="margin-bottom: 0.6rem;">
+                <strong>Digital model</strong> - a static, offline
+                representation (e.g. a CAD model) with no live data
+                connection at all. Nothing updates automatically in either
+                direction.
+            </li>
+            <li style="margin-bottom: 0.6rem;">
+                <strong>Digital shadow</strong> - a live, one-directional
+                data feed from the physical object into the digital model.
+                Sensors push state in, so the model always reflects current
+                conditions - but the model cannot act back on the physical
+                object. Most "IoT dashboards" are actually this.
+            </li>
+            <li>
+                <strong>Digital twin</strong> - a live, <em>bidirectional</em>
+                system: sensors feed the model, the model computes a
+                decision (here, an anomaly detection result), and that
+                decision is sent back to physical outputs - the LED bank and
+                buzzer, in this system's case.
+            </li>
+        </ul>
+        <p>
+            That closed loop - sensor data in, a computed decision back out
+            to a physical indicator - is what actually qualifies this as a
+            Digital Twin rather than just a nicer dashboard.
+        </p>
+
+        <h3>The research question</h3>
+        <p>
+            The thesis behind this project asks a specific, testable
+            question: can a signal-processing pipeline written in Rust - a
+            systems language with compile-time memory safety and no garbage
+            collector - match or beat the throughput of Python's NumPy/SciPy
+            stack on identical workloads, while keeping the kind of
+            predictable, low-jitter timing that a real-time control loop
+            needs? The core of that pipeline is a Fast Fourier Transform,
+            used to turn a motor's vibration signal into a frequency
+            spectrum where developing faults show up as new or shifting
+            frequency components, long before the fault is visible any other
+            way.
+        </p>
+
+        <h3>System architecture</h3>
+        <table class="arch-table">
+            <thead>
+                <tr><th>Layer</th><th>Component</th><th>Role</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Physical</td><td>Motor + propeller</td><td>Physical object being monitored</td></tr>
+                <tr><td>Sensing</td><td>MPU-6050 (GY-521)</td><td>Accelerometer - vibration for FFT (live now)</td></tr>
+                <tr><td>Sensing</td><td>BME280</td><td>Temperature, humidity &amp; pressure (live now, I2C)</td></tr>
+                <tr><td>Processing</td><td>Pico 2 W</td><td>Runs Rust DSP code, sends data via Wi-Fi</td></tr>
+                <tr><td>Processing</td><td>Rust DSP library</td><td>FFT + filters + anomaly detector</td></tr>
+                <tr><td>Physical UI</td><td>LED indicators (x9)</td><td>3 per parameter - green / yellow / red status</td></tr>
+                <tr><td>Physical UI</td><td>Active buzzer</td><td>Audio alert on critical anomaly</td></tr>
+                <tr><td>Digital Twin</td><td>Web application</td><td>Real-time dashboard + Digital Twin interface</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Where things stand right now</h3>
+        <p>
+            Both the MPU6050 (motion) and the BME280 (temperature, humidity,
+            pressure) are live, real sensor data, each running on its own
+            independent I2C bus. This replaces an earlier DHT22 sensor,
+            which worked perfectly on its own but proved unreliable
+            whenever the Wi-Fi radio was active - an extensively
+            investigated and documented hardware-coexistence issue (see
+            <code>tech.md</code> for the full write-up). I2C's clock line
+            gives it real tolerance for exactly the kind of disruption that
+            broke the DHT22's single-wire, self-timed protocol. The
+            LED/buzzer classification logic has been validated against all
+            9 possible green/yellow/red combinations, and the "Simulate"
+            page remains available for testing/demo purposes.
+        </p>
+    </section>
+</main>
+
+<footer>
+    <p>&copy; 2026 SmartStation &middot; Daria Gladkykh</p>
+</footer>
+</body>
+</html>

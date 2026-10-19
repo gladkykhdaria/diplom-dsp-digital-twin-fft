@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartStation - Control</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header>
+    <nav>
+        <h1>SmartStation</h1>
+        <ul>
+            <li><a href="/index.html">Dashboard</a></li>
+            <li><a href="/about.html">About</a></li>
+            <li><a href="/sensors.html">Simulate</a></li>
+            <li><a href="/control.html">Manual LEDs</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <section class="hero">
+        <h2>System Control</h2>
+        <p>Interact with the physical system in real time</p>
+        <div id="status-badge" class="badge badge-unknown">Checking connection...</div>
+    </section>
+
+    <section class="control-content">
+        <div class="card">
+            <h3>Test LED (GP15)</h3>
+            <p>Stand-in for the future 9-LED indicator bank. Confirms the browser &rarr; web app &rarr; Pico command path works end to end.</p>
+            <div class="button-row">
+                <button id="led-on" class="btn btn-on">Turn ON</button>
+                <button id="led-off" class="btn btn-off">Turn OFF</button>
+            </div>
+            <p id="led-result" class="result-text"></p>
+        </div>
+
+        <div class="card card-placeholder">
+            <h3>Motor (GP18)</h3>
+            <p>Now automatic - runs as a cooling fan, driven by the same alarm condition as the buzzer (BME280 temp/humidity). See <a href="/index.html">Dashboard</a> for live status.</p>
+        </div>
+
+        <div class="card card-placeholder">
+            <h3>Temperature &amp; Humidity</h3>
+            <p>Real BME280 data is live now &rarr; see <a href="/index.html">Dashboard</a>.</p>
+        </div>
+
+        <div class="card card-placeholder">
+            <h3>Vibration / FFT Spectrum</h3>
+            <p>Real MPU6050 data is live now &rarr; see <a href="/motion.html">Motion</a>. FFT spectrum view still pending.</p>
+        </div>
+
+        <div class="card card-placeholder">
+            <h3>Anomaly Log</h3>
+            <p>Waiting on anomaly detector integration.</p>
+        </div>
+    </section>
+</main>
+
+<footer>
+    <p>&copy; 2026 SmartStation &middot; Daria Gladkykh</p>
+</footer>
+
+<script>
+async function checkStatus() {
+    const badge = document.getElementById('status-badge');
+    try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        badge.textContent = data.connected ? 'System connected' : 'System not reachable';
+        badge.className = data.connected ? 'badge badge-ok' : 'badge badge-down';
+    } catch (e) {
+        badge.textContent = 'System not reachable';
+        badge.className = 'badge badge-down';
+    }
+}
+
+async function setLed(state) {
+    const resultEl = document.getElementById('led-result');
+    resultEl.textContent = 'Sending...';
+    try {
+        const res = await fetch(`/api/led/${state}`, { method: 'POST' });
+        const data = await res.json();
+        resultEl.textContent = data.ok
+            ? `LED is now ${data.led_on ? 'ON' : 'OFF'}`
+            : `Error: ${data.message}`;
+    } catch (e) {
+        resultEl.textContent = 'Error: could not reach the web server';
+    }
+    checkStatus();
+}
+
+document.getElementById('led-on').addEventListener('click', () => setLed('on'));
+document.getElementById('led-off').addEventListener('click', () => setLed('off'));
+
+checkStatus();
+setInterval(checkStatus, 5000);
+</script>
+</body>
+</html>

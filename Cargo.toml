@@ -1,0 +1,11 @@
+[package]
+name = "smart_station_web"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = "0.8.3"
+tokio = { version = "1.44.2", features = ["full"] }
+tower-http = { version = "0.6.2", features = ["fs", "trace"] }
+serde = { version = "1.0.193", features = ["derive"] }
+serde_json = "1.0.108"

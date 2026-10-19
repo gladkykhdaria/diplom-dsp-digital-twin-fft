@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartStation - Sensor Simulation</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header>
+    <nav>
+        <h1>SmartStation</h1>
+        <ul>
+            <li><a href="/index.html">Dashboard</a></li>
+            <li><a href="/about.html">About</a></li>
+            <li><a href="/sensors.html">Simulate</a></li>
+            <li><a href="/control.html">Manual LEDs</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <section class="hero">
+        <h2>Sensor Simulation</h2>
+        <p>Type in a temperature/humidity value (or use a preset) to see how the 6-LED bank and buzzer would react - before the real DHT22 is wired in.</p>
+        <div id="status-badge" class="badge badge-unknown">Checking connection...</div>
+    </section>
+
+    <section class="control-content">
+        <div class="card">
+            <h3>Manual input</h3>
+            <div class="form-row">
+                <label for="temp-input">Temperature (&deg;C)</label>
+                <input type="number" id="temp-input" step="0.1" value="22.0">
+            </div>
+            <div class="form-row">
+                <label for="humidity-input">Humidity (% RH)</label>
+                <input type="number" id="humidity-input" step="0.1" value="45.0">
+            </div>
+            <div class="button-row">
+                <button id="send-btn" class="btn btn-on">Send to Pico</button>
+            </div>
+            <div id="result-box" class="result-box"></div>
+        </div>
+
+        <div class="card">
+            <h3>Presets - all 9 combinations</h3>
+            <p>Each button covers one temperature level &times; one humidity level, so you can confirm every LED and the buzzer react correctly.</p>
+            <div class="preset-grid" id="preset-grid"></div>
+        </div>
+    </section>
+</main>
+
+<footer>
+    <p>&copy; 2026 SmartStation &middot; Daria Gladkykh</p>
+</footer>
+
+<script>
+const presets = [
+    { label: 'Temp GREEN / Hum GREEN',  temp: 22.0, humidity: 45.0 },
+    { label: 'Temp GREEN / Hum YELLOW', temp: 22.0, humidity: 65.0 },
+    { label: 'Temp GREEN / Hum RED',    temp: 22.0, humidity: 80.0 },
+    { label: 'Temp YELLOW / Hum GREEN', temp: 30.0, humidity: 45.0 },
+    { label: 'Temp YELLOW / Hum YELLOW',temp: 30.0, humidity: 65.0 },
+    { label: 'Temp YELLOW / Hum RED',   temp: 30.0, humidity: 80.0 },
+    { label: 'Temp RED / Hum GREEN',    temp: 40.0, humidity: 45.0 },
+    { label: 'Temp RED / Hum YELLOW',   temp: 40.0, humidity: 65.0 },
+    { label: 'Temp RED / Hum RED',      temp: 40.0, humidity: 80.0 },
+];
+
+const grid = document.getElementById('preset-grid');
+presets.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-preset';
+    btn.textContent = `${p.label} (${p.temp}\u00b0C, ${p.humidity}%)`;
+    btn.addEventListener('click', () => sendReading(p.temp, p.humidity));
+    grid.appendChild(btn);
+});
+
+async function checkStatus() {
+    const badge = document.getElementById('status-badge');
+    try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        badge.textContent = data.connected ? 'System connected' : 'System not reachable';
+        badge.className = data.connected ? 'badge badge-ok' : 'badge badge-down';
+    } catch (e) {
+        badge.textContent = 'System not reachable';
+        badge.className = 'badge badge-down';
+    }
+}
+
+async function sendReading(temperature, humidity) {
+    const box = document.getElementById('result-box');
+    box.textContent = 'Sending...';
+    box.className = 'result-box';
+    try {
+        const res = await fetch('/api/simulate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ temperature, humidity })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            box.innerHTML =
+                `Temperature: <strong class="level-${data.temp_level}">${data.temp_level.toUpperCase()}</strong><br>` +
+                `Humidity: <strong class="level-${data.humidity_level}">${data.humidity_level.toUpperCase()}</strong><br>` +
+                `Buzzer: <strong>${data.buzzer_on ? 'ON' : 'off'}</strong>`;
+            box.className = 'result-box result-ok';
+        } else {
+            box.textContent = `Error: ${data.raw}`;
+            box.className = 'result-box result-error';
+        }
+    } catch (e) {
+        box.textContent = 'Error: could not reach the web server';
+        box.className = 'result-box result-error';
+    }
+    checkStatus();
+}
+
+document.getElementById('send-btn').addEventListener('click', () => {
+    const temp = parseFloat(document.getElementById('temp-input').value);
+    const hum = parseFloat(document.getElementById('humidity-input').value);
+    sendReading(temp, hum);
+});
+
+checkStatus();
+setInterval(checkStatus, 5000);
+</script>
+</body>
+</html>

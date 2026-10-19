@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartStation - Dashboard</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header>
+    <nav>
+        <h1>SmartStation</h1>
+        <ul>
+            <li><a href="/index.html">Dashboard</a></li>
+            <li><a href="/about.html">About</a></li>
+            <li><a href="/sensors.html">Simulate</a></li>
+            <li><a href="/control.html">Manual LEDs</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <div class="telemetry-strip">
+        <span class="live-dot" id="live-dot"></span>
+        <span id="strip-status">connecting...</span>
+        <span class="sep">|</span>
+        <span id="strip-temp">temp --</span>
+        <span class="sep">|</span>
+        <span id="strip-hum">hum --</span>
+        <span class="sep">|</span>
+        <span id="strip-accel">accel --</span>
+        <span class="sep">|</span>
+        <span id="strip-buzzer">buzzer --</span>
+    </div>
+
+    <section class="hero">
+        <h2>Digital Twin Dashboard</h2>
+        <p>Temperature/humidity (simulated - see About) and live motion data, in one view.</p>
+    </section>
+
+    <div class="dashboard-grid">
+        <div class="panel">
+            <h3>Temperature, Humidity &amp; Pressure</h3>
+            <p class="subtitle">BME280 - real, live data (I2C - proven reliable alongside Wi-Fi, unlike the DHT22 tried earlier, see tech.md)</p>
+
+            <div class="readout-row">
+                <span class="readout-label">Temperature</span>
+                <span class="readout-value" id="dht-temp">-- &deg;C</span>
+            </div>
+            <div class="readout-row">
+                <span class="readout-label">Humidity</span>
+                <span class="readout-value" id="dht-hum">-- %</span>
+            </div>
+            <div class="readout-row">
+                <span class="readout-label">Pressure</span>
+                <span class="readout-value" id="dht-pressure">-- Pa</span>
+            </div>
+
+            <div class="led-row">
+                <span class="readout-label" style="width: 90px;">Temp LED</span>
+                <span class="led-dot" id="led-temp-green"></span>
+                <span class="led-dot" id="led-temp-yellow"></span>
+                <span class="led-dot" id="led-temp-red"></span>
+            </div>
+            <div class="led-row">
+                <span class="readout-label" style="width: 90px;">Hum LED</span>
+                <span class="led-dot" id="led-hum-green"></span>
+                <span class="led-dot" id="led-hum-yellow"></span>
+                <span class="led-dot" id="led-hum-red"></span>
+            </div>
+            <div class="buzzer-line">Buzzer: <strong id="buzzer-state">--</strong></div>
+            <div class="buzzer-line">Motor (fan): <strong id="motor-state">--</strong></div>
+
+            <div class="form-row" style="margin-top: 1.2rem;">
+                <label for="temp-input">Set temperature (&deg;C)</label>
+                <input type="number" id="temp-input" step="0.1" value="22.0">
+            </div>
+            <div class="form-row">
+                <label for="hum-input">Set humidity (% RH)</label>
+                <input type="number" id="hum-input" step="0.1" value="45.0">
+            </div>
+            <button id="send-sim-btn" class="btn btn-primary">Send to Pico</button>
+            <p class="result-text" id="sim-result"></p>
+        </div>
+
+        <div class="panel">
+            <h3>Motion (MPU6050)</h3>
+            <p class="subtitle">Real, live accelerometer + gyroscope data</p>
+
+            <div class="readout-row">
+                <span class="readout-label">Accel X</span>
+                <span class="readout-value" id="accel-x">-- g</span>
+            </div>
+            <div class="readout-row">
+                <span class="readout-label">Accel Y</span>
+                <span class="readout-value" id="accel-y">-- g</span>
+            </div>
+            <div class="readout-row">
+                <span class="readout-label">Accel Z</span>
+                <span class="readout-value" id="accel-z">-- g</span>
+            </div>
+            <div class="readout-row">
+                <span class="readout-label">Gyro X</span>
+                <span class="readout-value" id="gyro-x">-- deg/s</span>
+            </div>
+            <div class="readout-row">
+                <span class="readout-label">Gyro Y</span>
+                <span class="readout-value" id="gyro-y">-- deg/s</span>
+            </div>
+            <div class="readout-row">
+                <span class="readout-label">Gyro Z</span>
+                <span class="readout-value" id="gyro-z">-- deg/s</span>
+            </div>
+            <div class="readout-row">
+                <span class="readout-label">Sensor temp</span>
+                <span class="readout-value" id="mpu-temp">-- &deg;C</span>
+            </div>
+            <div class="readout-row">
+                <span class="readout-label">Vibration (FFT)</span>
+                <span class="readout-value" id="vibration-state">--</span>
+            </div>
+
+            <div class="note-box">Both sensors are real, sharing one I2C0 bus safely via the official embassy shared-bus pattern (BME280 at address 0x76, MPU6050 at 0x68) - both proven to keep working correctly with Wi-Fi active, unlike the DHT22's single-wire protocol tried earlier. MPU6050's Z-axis feeds a real on-device FFT (256-sample window, ~1.28s), whose result now drives the same LED/buzzer/motor alarm as temperature and humidity.</div>
+        </div>
+    </div>
+</main>
+
+<footer>
+    <p>&copy; 2026 SmartStation &middot; Daria Gladkykh</p>
+</footer>
+
+<script>
+const presets = { greenGreen: [22.0, 45.0] };
+
+function setBadgeStrip(connected) {
+    const dot = document.getElementById('live-dot');
+    const status = document.getElementById('strip-status');
+    dot.className = connected ? 'live-dot' : 'live-dot down';
+    status.textContent = connected ? 'system connected' : 'system not reachable';
+}
+
+function setLeds(prefix, level) {
+    ['green', 'yellow', 'red'].forEach(color => {
+        const el = document.getElementById(`led-${prefix}-${color}`);
+        el.className = 'led-dot' + (color === level ? ' lit-' + color : '');
+    });
+}
+
+async function checkStatus() {
+    try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        setBadgeStrip(data.connected);
+    } catch (e) {
+        setBadgeStrip(false);
+    }
+}
+
+async function sendSim(temperature, humidity) {
+    const resultEl = document.getElementById('sim-result');
+    resultEl.textContent = 'sending...';
+    try {
+        const res = await fetch('/api/simulate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ temperature, humidity })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            document.getElementById('dht-temp').textContent = temperature.toFixed(1) + ' \u00b0C';
+            document.getElementById('dht-hum').textContent = humidity.toFixed(1) + ' %';
+            document.getElementById('strip-temp').textContent = 'temp ' + temperature.toFixed(1) + 'C';
+            document.getElementById('strip-hum').textContent = 'hum ' + humidity.toFixed(1) + '%';
+            document.getElementById('strip-buzzer').textContent = 'buzzer ' + (data.buzzer_on ? 'on' : 'off');
+            document.getElementById('buzzer-state').textContent = data.buzzer_on ? 'ON' : 'off';
+            document.getElementById('motor-state').textContent = data.buzzer_on ? 'ON' : 'off';
+            document.getElementById('vibration-state').textContent = data.vibration_alarm ? 'ANOMALY' : 'normal';
+            setLeds('temp', data.temp_level);
+            setLeds('hum', data.humidity_level);
+            resultEl.textContent = `applied: temp=${data.temp_level}, humidity=${data.humidity_level}`;
+        } else {
+            resultEl.textContent = 'Error: ' + data.raw;
+        }
+    } catch (e) {
+        resultEl.textContent = 'Error: could not reach the web server';
+    }
+    checkStatus();
+}
+
+async function fetchReading() {
+    try {
+        const res = await fetch('/api/reading');
+        const data = await res.json();
+        if (data.ok) {
+            document.getElementById('dht-temp').textContent = fmt(data.temperature, 1) + ' \u00b0C';
+            document.getElementById('dht-hum').textContent = fmt(data.humidity, 1) + ' %';
+            document.getElementById('dht-pressure').textContent = fmt(data.pressure, 1) + ' Pa';
+            document.getElementById('strip-temp').textContent = 'temp ' + fmt(data.temperature, 1) + 'C';
+            document.getElementById('strip-hum').textContent = 'hum ' + fmt(data.humidity, 1) + '%';
+            document.getElementById('strip-buzzer').textContent = 'buzzer ' + (data.buzzer_on ? 'on' : 'off');
+            document.getElementById('buzzer-state').textContent = data.buzzer_on ? 'ON' : 'off';
+            document.getElementById('motor-state').textContent = data.buzzer_on ? 'ON' : 'off';
+            document.getElementById('vibration-state').textContent = data.vibration_alarm ? 'ANOMALY' : 'normal';
+            setLeds('temp', data.temp_level);
+            setLeds('hum', data.humidity_level);
+        }
+    } catch (e) {
+        // leave last known values on screen
+    }
+    checkStatus();
+}
+
+document.getElementById('send-sim-btn').addEventListener('click', () => {
+    const t = parseFloat(document.getElementById('temp-input').value);
+    const h = parseFloat(document.getElementById('hum-input').value);
+    sendSim(t, h);
+});
+
+function fmt(value, digits) {
+    return value !== null && value !== undefined ? value.toFixed(digits) : '--';
+}
+
+async function fetchMotion() {
+    try {
+        const res = await fetch('/api/motion');
+        const data = await res.json();
+        if (data.ok) {
+            document.getElementById('accel-x').textContent = fmt(data.accel_x, 3) + ' g';
+            document.getElementById('accel-y').textContent = fmt(data.accel_y, 3) + ' g';
+            document.getElementById('accel-z').textContent = fmt(data.accel_z, 3) + ' g';
+            document.getElementById('gyro-x').textContent = fmt(data.gyro_x, 2) + ' deg/s';
+            document.getElementById('gyro-y').textContent = fmt(data.gyro_y, 2) + ' deg/s';
+            document.getElementById('gyro-z').textContent = fmt(data.gyro_z, 2) + ' deg/s';
+            document.getElementById('mpu-temp').textContent = fmt(data.temp, 1) + ' \u00b0C';
+            document.getElementById('strip-accel').textContent =
+                'accel ' + fmt(data.accel_x, 2) + ',' + fmt(data.accel_y, 2) + ',' + fmt(data.accel_z, 2);
+        }
+    } catch (e) {
+        // leave last known values on screen
+    }
+    checkStatus();
+}
+
+// Both sensors are real now - poll actual readings instead of forcing a
+// simulated value on load. The "Send to Pico" button remains available
+// for testing/demo purposes and briefly overrides temp/humidity.
+fetchReading();
+fetchMotion();
+setInterval(fetchReading, 2000);
+setInterval(fetchMotion, 1000);
+</script>
+</body>
+</html>
