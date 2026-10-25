@@ -68,8 +68,64 @@ Python comparison.
 - Delivered comment-stripped versions of both code projects
   (`pico_hotspot`, `smart_station_web`) on request.
 
-**Oct 19, 2026** — Resolved a GitHub push permission issue (stale
-cached credential for a second GitHub account blocking pushes to the
-`hotspot` branch) — tooling fix, not a project decision. (again me and my stupidity :o)
+**Oct 19, 2026** — Several things done the same day:
+- Built an architecture write-up with diagrams: the overall sensor-to-
+  dashboard data flow, the feedback loop, the three-task concurrency
+  model, and the TCP protocol sequence.
+- Refactored the firmware's temperature/humidity/vibration control flow
+  into explicit stages matching the professor's own sketch: a pure
+  `controller_decide()` (decision only, no hardware access) and a
+  `drive_actuators()` that is the only function touching any LED,
+  buzzer, or motor pin. No behavior change, just the feedback loop made
+  explicit in code instead of only in wiring.
+- Built the live spectrogram for real (FR-16): a rolling ring buffer of
+  compressed FFT magnitude frames on the Pico, a new `spectro` TCP
+  command, and a scrolling canvas heatmap on the web dashboard. Kept
+  deliberately one-way: the spectrogram never feeds the alarm logic.
 
+  
+**Oct 21, 2026** — Wrote a project-context handoff document (full
+research question, hardware, software architecture, debugging history,
+file inventory, and standing preferences) so a new chat could continue
+the project without re-explaining everything.
+ 
+**Oct 24, 2026** — Two hardware test sessions on real flashed firmware:
+- First session: a debug-probe disconnect ("target device did not
+  respond") right as the session was interrupted while the motor was
+  active — consistent with the same motor-noise-on-shared-ground issue
+  from Sept 6, not a new firmware bug. Added an explicit per-call log
+  line (`drive_actuators call #N: motor pin commanded = ...`) so a
+  firmware-side cause can be distinguished from a hardware-side one
+  without a multimeter.
+- Second session: confirmed, from the new log line, that the firmware
+  commanded the motor pin identically every single time a "red" sim
+  command was sent. What looked like "the motor stopped working" was
+  actually the automatic BME280 polling (every 2.5s) reverting the
+  simulated red state back to the real (green/yellow) room reading —
+  the sim override is one-shot by design, not persistent. Not a bug.
+
+  
+**Oct 25, 2026** — Closed the last two open core requirements:
+- **FR-11** (export real recorded vibration data): added a `dump` TCP
+  command to the firmware. A new fixed-size ring buffer
+  (`RAW_HISTORY`, 2048 raw Z-axis samples, ~10.24s at 200Hz) captures
+  every raw accelerometer sample, independent of the FFT windowing,
+  and streams it out as CSV on request.
+- **FR-12** (Rust vs Python benchmark on real data): built
+  `export_vibration_data.py` (pulls a `dump` off the Pico and saves it
+  as CSV), `benchmark.rs`, and `benchmark.py` — identical methodology
+  in both languages: load the same real recorded CSV, tile it up to
+  three sizes (1,024 / 65,536 / 1,048,576 samples) since recording an
+  hour of real data live isn't practical, run the FFT 30 times per
+  size, report mean/stddev/min/max in milliseconds.
+- Ran the full pipeline end to end on real hardware for the first
+  time: exported a genuine 2048-sample recording from the Pico, ran
+  both benchmarks against it. Rust was faster and far more consistent
+  (lower jitter) at the smallest size; Python/NumPy was faster on raw
+  throughput at the two larger sizes (NumPy's FFT calls into an
+  optimized compiled C library, so this is partly measuring that
+  library against `rustfft`, not language overhead alone), but Rust
+  stayed more consistent across all three sizes. Added 3 new tests for
+  the tiling logic (15 total, all passing) confirming tiling a real
+  recording doesn't distort its frequency content.
 ---
