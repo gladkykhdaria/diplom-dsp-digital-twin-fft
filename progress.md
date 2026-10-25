@@ -103,8 +103,6 @@ the project without re-explaining everything.
   actually the automatic BME280 polling (every 2.5s) reverting the
   simulated red state back to the real (green/yellow) room reading —
   the sim override is one-shot by design, not persistent. Not a bug.
-
-  
 **Oct 25, 2026** — Closed the last two open core requirements:
 - **FR-11** (export real recorded vibration data): added a `dump` TCP
   command to the firmware. A new fixed-size ring buffer
@@ -128,4 +126,102 @@ the project without re-explaining everything.
   stayed more consistent across all three sizes. Added 3 new tests for
   the tiling logic (15 total, all passing) confirming tiling a real
   recording doesn't distort its frequency content.
----
+**Oct 25, 2026 (later the same day)** — Decided to adopt the professor's
+full pivot direction rather than leave any of it as optional stretch
+scope: every remaining row in requirements.md's FR table, plus both
+rounds of brainstormed ideas, implemented in one pass.
+- **FR-13** (adaptive, power-aware sampling): the firmware now tracks a
+  calm/alert sampling mode. While calm, the FFT itself only runs on
+  every 4th vibration window instead of every one — raw sampling for
+  the dump/spectrogram histories is unaffected, only the expensive
+  compute step is throttled. Any sign of real risk (an active alarm, a
+  spike, or the slow baseline climbing toward the threshold) switches
+  back to full-rate FFT immediately.
+- **FR-14** (drift vs. spike): added a slow exponential-moving-average
+  baseline (mean and variance) of vibration energy, separate from both
+  the instant reading and the fixed calibration thresholds. A reading
+  far above that slow baseline (by a few standard deviations) is
+  classified as a spike; the slow baseline itself climbing well past
+  its value right after calibration is classified as drift. Both
+  comparisons avoid needing a square root, which isn't readily
+  available in this no_std build.
+- **Explainable alarm trace**: every time the alarm actually trips, the
+  firmware now records which frequency bin was dominant, how far over
+  the threshold the triggering energy was, and how many consecutive
+  windows the episode has lasted — not just the boolean that already
+  existed.
+- **FR-17** (live energy-per-decision estimate): a rough estimate,
+  built from a known active-mode current draw and a cycle-count guess
+  for the sampling and FFT work, updated every window and shown live.
+  No INA219 yet — swapping one in later only changes the one function
+  that computes the estimate.
+- All four of the above are exposed through one new `diag` TCP command
+  and a matching `/api/diag` route on the dashboard, with a new
+  Diagnostics panel showing the sampling mode, trend, live/cumulative
+  energy estimate, and the current alarm trace in plain language.
+- **FR-18** (live Rust vs. Python replay): a new `/api/replay` route on
+  the web app. One click pulls a real recorded vibration dump straight
+  off the Pico, then runs the same windowed FFT-and-threshold decision
+  through a Rust path (in-process, `rustfft`) and a Python path (a
+  short-lived subprocess, NumPy) over that exact same data, timing each
+  and reporting whether the two agree on the alarm decision. Shown on
+  the dashboard as two timing bars side by side.
+- **FFI control arm**: `smart_station_dsp` now also builds as a C ABI
+  shared library (`smart_station_fft_magnitude`), exposing the exact
+  same FFT code `magnitude_spectrum` already used. A new
+  `benchmark_ffi.py` calls straight into that compiled library via
+  `ctypes` and runs it through the same three-size, 30-repetition
+  methodology as the other two arms — so a Rust-vs-Python timing gap
+  can be separated from an algorithm-choice gap. Built, and smoke-tested
+  end to end on a synthetic recording (mean time scaled sensibly across
+  all three sizes, consistent with the pure-Rust arm plus a small,
+  expected ctypes call overhead).
+- Went through all ten NFRs against everything built today: most still
+  hold by construction (fixed-size state, same style of doc comments,
+  same local-network-only exposure); flagged two that are argued from
+  design rather than freshly re-measured (the 5ms real-time budget, and
+  flash footprint) as worth confirming with a real build/timing capture
+  before leaning on them in the defense.
+- Updated requirements.md: all 18 FRs now marked done: the 12 original
+  core ones plus all 6 that were previously marked Stretch, now marked
+  Adopted. Repackaged all three project zips with the new code.
+**Oct 25, 2026 (evening)** — Flashed and ran everything from the pivot
+work above on real hardware for the first time, then found and fixed
+two real bugs surfaced by that run:
+- Confirmed FR-13/14/17/18 on the real device: log output showing
+  adaptive calm-mode windows actually skipping the FFT, the new `diag`
+  command responding correctly, and the dashboard's Diagnostics panel
+  showing live sampling mode, trend, and energy readings.
+- **Spectrogram bug found and fixed**: the live spectrogram panel was
+  showing as a flat, mostly-dark line with one red stripe. Root cause,
+  confirmed from real hardware logs and screenshots: the on-device
+  compression step included FFT bin 0 (DC), which on the Z-axis
+  carries the ~1g constant gravity offset, a value vastly larger than
+  any real vibration content. That one bin dominated the dashboard's
+  per-frame auto-scaling and crushed every genuine bin to near-black.
+  Fixed by excluding bin 0 from the compression, confirmed afterward
+  by a real hardware screenshot showing genuine blocky vibration
+  texture instead of a flat line.
+- **New HD spectrogram added**: a second, laptop-computed view
+  (`/api/spectro_hd`), recomputing a proper windowed, overlapping STFT
+  (256-sample Hann window, 75% overlap, 32 bins) from the same raw
+  `dump` buffer the Pico already exports, shown side by side with the
+  original on-device view rather than replacing it.
+- **Second, subtler version of the same bug, in the new HD path**:
+  the HD panel rendered as a completely blank rectangle. Root cause:
+  tapering a near-constant, gravity-heavy signal with a Hann window
+  makes it non-constant over the window, so the window's own spectral
+  shape (several bins wide, not a single spike) smears that huge DC
+  term across the first several bins instead of just bin 0, defeating
+  the earlier bin-0-only fix. Fixed by subtracting each window's own
+  mean before applying the Hann window (standard detrending practice
+  for any windowed FFT on real sensor data), confirmed by a follow-up
+  screenshot showing real, distinct texture on both spectrograms
+  side by side.
+- **Dashboard styling fixes**: a header-duplication artifact seen in a
+  printed/exported PDF of the dashboard traced to the sticky nav bar
+  being re-anchored to the top of each page by the browser's print
+  pagination (a print-only quirk, not a live-browsing bug), fixed with
+  a `@media print` rule; and the panel layout reworked from a
+  multi-column grid of small boxes into a single full-width column per
+  request, so every panel spans the full page width.
